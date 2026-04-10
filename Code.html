@@ -1,0 +1,130 @@
+<!DOCTYPE html>
+<html lang="zh-TW">
+<head>
+    <meta charset="UTF-8">
+    <meta name="viewport" content="width=device-width, initial-scale=1.0">
+    <title>成品出貨掃瞄比對系統 (升級版-防重整遺失)</title>
+    <script src="https://unpkg.com/html5-qrcode"></script>
+    <style>
+        body { font-family: sans-serif; text-align: center; padding: 15px; margin: 0; }
+        #reader { width: 100%; max-width: 500px; margin: 0 auto; }
+        #result-container { margin-top: 20px; padding: 20px; font-size: 18px; font-weight: bold; border: 2px solid #ccc; border-radius: 8px; }
+        
+        .ok-bg { background-color: #d4edda; color: #155724; border-color: #c3e6cb !important; }
+        .ng-bg { background-color: #f8d7da; color: #721c24; border-color: #f5c6cb !important; }
+        .info-bg { background-color: #e2e3e5; color: #383d41; border-color: #d6d8db !important; }
+        
+        button { margin-top: 15px; padding: 12px 24px; font-size: 16px; cursor: pointer; background-color: #007bff; color: white; border: none; border-radius: 5px; }
+        button:hover { background-color: #0056b3; }
+        #stored-qr1 { margin-top: 15px; font-size: 16px; color: #0056b3; font-weight: bold; }
+    </style>
+</head>
+<body>
+    <h2>成品出貨比對測試 (本地記憶版)</h2>
+    
+    <div id="reader"></div>
+    
+    <div id="stored-qr1">目前狀態：讀取中...</div>
+    <div id="result-container" class="info-bg">請對準 QR Code 進行掃描</div>
+    
+    <button onclick="resetQR1()">產生新事件 (清除記憶並掃描新 QR1)</button>
+
+    <script>
+        // 初始化時，先嘗試從 LocalStorage 讀取是否有暫存的 QR1 資料
+        let storedQR1 = JSON.parse(localStorage.getItem('savedQR1_data'));
+
+        // 畫面初始化更新邏輯
+        function updateUI() {
+            const resultDiv = document.getElementById('result-container');
+            if (storedQR1) {
+                document.getElementById('stored-qr1').innerText = 
+                    `【記憶已載入】\n工單號碼: ${storedQR1.workOrder} | Lot No: ${storedQR1.lotNo}`;
+                resultDiv.innerText = "已載入先前的 QR1 記憶\n請直接掃描成品 QR2";
+                resultDiv.className = "info-bg";
+            } else {
+                document.getElementById('stored-qr1').innerText = "目前狀態：等待掃描 QR1 (包裝明細)";
+                resultDiv.innerText = "請對準 QR Code 進行掃描";
+                resultDiv.className = "info-bg";
+            }
+        }
+        
+        // 執行畫面初始化
+        updateUI();
+
+        // 初始化掃描器物件
+        let html5QrcodeScanner = new Html5QrcodeScanner(
+            "reader", 
+            { fps: 10, qrbox: { width: 250, height: 250 } }, 
+            false
+        );
+
+        // 掃描成功邏輯
+        function onScanSuccess(decodedText, decodedResult) {
+            const dataParts = decodedText.trim().split(/\s+/); 
+            const resultDiv = document.getElementById('result-container');
+
+            if (!storedQR1) {
+                // ---------- 處理 QR1 ----------
+                if (dataParts.length >= 2) {
+                    storedQR1 = {
+                        workOrder: dataParts[0],
+                        lotNo: dataParts[1]
+                    };
+                    
+                    // 將資料轉換為 JSON 格式並寫入 LocalStorage
+                    localStorage.setItem('savedQR1_data', JSON.stringify(storedQR1));
+                    
+                    updateUI();
+                    resultDiv.innerText = "QR1 讀取並記錄成功！\n請開始掃描成品 QR2";
+                    pauseScanner();
+                } else {
+                    alert("QR1 解析失敗：欄位數量不足。");
+                }
+            } else {
+                // ---------- 處理 QR2 ----------
+                if (dataParts.length >= 5) {
+                    const qr2LotNo = dataParts[1];
+                    const qr2WorkOrder = dataParts[3];
+
+                    if (storedQR1.workOrder === qr2WorkOrder && storedQR1.lotNo === qr2LotNo) {
+                        resultDiv.innerText = `比對結果：OK\n實際工單：${qr2WorkOrder} | Lot：${qr2LotNo}`;
+                        resultDiv.className = "ok-bg";
+                        alert("OK");
+                    } else {
+                        resultDiv.innerText = `比對結果：NG\n預期工單：${storedQR1.workOrder} | 實際工單：${qr2WorkOrder}\n預期 Lot：${storedQR1.lotNo} | 實際 Lot：${qr2LotNo}`;
+                        resultDiv.className = "ng-bg";
+                        alert("NG");
+                    }
+                    pauseScanner();
+                } else {
+                    alert("QR2 解析失敗：資料欄位不足 5 個。");
+                }
+            }
+        }
+
+        // 重新設定 (清除記憶)
+        function resetQR1() {
+            const confirmReset = confirm("確定要產生新事件嗎？這將會清除目前暫存的 QR1 紀錄。");
+            if (confirmReset) {
+                storedQR1 = null;
+                // 明確從 LocalStorage 中刪除該筆記憶
+                localStorage.removeItem('savedQR1_data');
+                updateUI();
+            }
+        }
+
+        function pauseScanner() {
+            html5QrcodeScanner.pause(true);
+            setTimeout(() => {
+                html5QrcodeScanner.resume();
+            }, 1500); 
+        }
+
+        function onScanFailure(error) {
+            // 忽略掃描中的錯誤訊息
+        }
+
+        html5QrcodeScanner.render(onScanSuccess, onScanFailure);
+    </script>
+</body>
+</html>
