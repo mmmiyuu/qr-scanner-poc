@@ -2,129 +2,199 @@
 <html lang="zh-TW">
 <head>
     <meta charset="UTF-8">
-    <meta name="viewport" content="width=device-width, initial-scale=1.0">
-    <title>成品出貨掃瞄比對系統 (升級版-防重整遺失)</title>
+    <meta name="viewport" content="width=device-width, initial-scale=1.0, maximum-scale=1.0, user-scalable=no">
+    <title>成品出貨掃瞄 (雙模式)</title>
     <script src="https://unpkg.com/html5-qrcode"></script>
     <style>
-        body { font-family: sans-serif; text-align: center; padding: 15px; margin: 0; }
-        #reader { width: 100%; max-width: 500px; margin: 0 auto; }
-        #result-container { margin-top: 20px; padding: 20px; font-size: 18px; font-weight: bold; border: 2px solid #ccc; border-radius: 8px; }
+        /* 核心佈局：限制高度為 100vh，禁止全域滾動 */
+        body { 
+            font-family: sans-serif; text-align: center; margin: 0; padding: 5px; 
+            height: 100vh; display: flex; flex-direction: column; overflow: hidden; background-color: #f4f6f9;
+        }
+        
+        h3 { margin: 5px 0; font-size: 18px; color: #333; }
+
+        /* 模式切換按鈕區塊 */
+        .mode-switch { display: flex; justify-content: center; gap: 10px; margin-bottom: 5px; }
+        .mode-btn { 
+            flex: 1; padding: 8px; font-size: 16px; border: 2px solid #007bff; background: white; 
+            color: #007bff; border-radius: 5px; font-weight: bold; cursor: pointer;
+        }
+        .mode-btn.active { background: #007bff; color: white; }
+
+        /* 掃描區域 (相機與紅外線共用區塊) */
+        .scanner-container { flex: 0 0 auto; height: 180px; display: flex; justify-content: center; align-items: center; margin-bottom: 5px;}
+        
+        /* 相機框大幅縮小 */
+        #reader { width: 100%; max-width: 220px; border-radius: 8px; overflow: hidden; display: none; }
+        
+        /* 紅外線輸入框設計 */
+        #ir-container { display: none; width: 100%; flex-direction: column; align-items: center; }
+        #ir-input { 
+            width: 80%; padding: 15px; font-size: 16px; text-align: center;
+            border: 2px solid #28a745; border-radius: 5px; background-color: #e9ecef;
+        }
+        .ir-hint { font-size: 12px; color: #666; margin-top: 5px; }
+
+        /* 狀態與結果顯示區 (佔滿剩餘空間) */
+        .info-panel { flex: 1; display: flex; flex-direction: column; justify-content: center; gap: 5px; }
+        
+        #stored-qr1 { font-size: 15px; color: #0056b3; font-weight: bold; background: #e2eef9; padding: 8px; border-radius: 5px; }
+        
+        #result-container { 
+            flex: 1; display: flex; align-items: center; justify-content: center; padding: 10px; 
+            font-size: 18px; font-weight: bold; border: 2px solid #ccc; border-radius: 8px; white-space: pre-wrap;
+        }
         
         .ok-bg { background-color: #d4edda; color: #155724; border-color: #c3e6cb !important; }
         .ng-bg { background-color: #f8d7da; color: #721c24; border-color: #f5c6cb !important; }
         .info-bg { background-color: #e2e3e5; color: #383d41; border-color: #d6d8db !important; }
         
-        button { margin-top: 15px; padding: 12px 24px; font-size: 16px; cursor: pointer; background-color: #007bff; color: white; border: none; border-radius: 5px; }
-        button:hover { background-color: #0056b3; }
-        #stored-qr1 { margin-top: 15px; font-size: 16px; color: #0056b3; font-weight: bold; }
+        /* 產生新事件按鈕 */
+        .reset-btn { 
+            width: 100%; padding: 12px; font-size: 18px; font-weight: bold; cursor: pointer; 
+            background-color: #dc3545; color: white; border: none; border-radius: 5px; flex: 0 0 auto; margin-bottom: 5px;
+        }
     </style>
 </head>
 <body>
-    <h2>成品出貨比對測試 (本地記憶版)</h2>
-    
-    <div id="reader"></div>
-    
-    <div id="stored-qr1">目前狀態：讀取中...</div>
-    <div id="result-container" class="info-bg">請對準 QR Code 進行掃描</div>
-    
-    <button onclick="resetQR1()">產生新事件 (清除記憶並掃描新 QR1)</button>
+    <h3>出貨比對系統</h3>
+
+    <div class="mode-switch">
+        <button id="btn-camera" class="mode-btn" onclick="setMode('camera')">📷 相機掃描</button>
+        <button id="btn-ir" class="mode-btn active" onclick="setMode('ir')">⚡ 紅外線 (PDA)</button>
+    </div>
+
+    <div class="scanner-container">
+        <div id="reader"></div>
+        <div id="ir-container">
+            <input type="text" id="ir-input" placeholder="請按下 PDA 掃描鍵..." onkeypress="handleIrInput(event)" autocomplete="off">
+            <div class="ir-hint">系統會自動攔截 PDA 掃描輸入</div>
+        </div>
+    </div>
+
+    <div class="info-panel">
+        <div id="stored-qr1">目前狀態：讀取中...</div>
+        <div id="result-container" class="info-bg">請選擇模式並掃描 QR Code</div>
+    </div>
+
+    <button class="reset-btn" onclick="resetQR1()">產生新事件 (換箱/新工單)</button>
 
     <script>
-        // 初始化時，先嘗試從 LocalStorage 讀取是否有暫存的 QR1 資料
         let storedQR1 = JSON.parse(localStorage.getItem('savedQR1_data'));
+        let currentMode = 'ir'; // 預設使用紅外線模式
+        let html5QrcodeScanner = null;
 
-        // 畫面初始化更新邏輯
+        // --- 介面初始化與模式切換邏輯 ---
         function updateUI() {
             const resultDiv = document.getElementById('result-container');
             if (storedQR1) {
-                document.getElementById('stored-qr1').innerText = 
-                    `【記憶已載入】\n工單號碼: ${storedQR1.workOrder} | Lot No: ${storedQR1.lotNo}`;
-                resultDiv.innerText = "已載入先前的 QR1 記憶\n請直接掃描成品 QR2";
+                document.getElementById('stored-qr1').innerText = `【記憶已載入】\n工單: ${storedQR1.workOrder} | Lot: ${storedQR1.lotNo}`;
+                resultDiv.innerText = "已就緒，請掃描成品 QR2";
                 resultDiv.className = "info-bg";
             } else {
-                document.getElementById('stored-qr1').innerText = "目前狀態：等待掃描 QR1 (包裝明細)";
-                resultDiv.innerText = "請對準 QR Code 進行掃描";
+                document.getElementById('stored-qr1').innerText = "【等待掃描包裝明細 QR1】";
+                resultDiv.innerText = "請掃描 QR1";
                 resultDiv.className = "info-bg";
             }
         }
-        
-        // 執行畫面初始化
-        updateUI();
 
-        // 初始化掃描器物件
-        let html5QrcodeScanner = new Html5QrcodeScanner(
-            "reader", 
-            { fps: 10, qrbox: { width: 250, height: 250 } }, 
-            false
-        );
+        function setMode(mode) {
+            currentMode = mode;
+            document.getElementById('btn-camera').classList.toggle('active', mode === 'camera');
+            document.getElementById('btn-ir').classList.toggle('active', mode === 'ir');
+            
+            if (mode === 'camera') {
+                document.getElementById('ir-container').style.display = 'none';
+                document.getElementById('reader').style.display = 'block';
+                // 啟動相機 (框體縮小：qrbox 設為 150)
+                if(!html5QrcodeScanner) {
+                    html5QrcodeScanner = new Html5QrcodeScanner("reader", { fps: 10, qrbox: { width: 150, height: 150 } }, false);
+                    html5QrcodeScanner.render(processScanResult, onScanFailure);
+                }
+            } else {
+                document.getElementById('reader').style.display = 'none';
+                document.getElementById('ir-container').style.display = 'flex';
+                // 關閉相機節省資源
+                if(html5QrcodeScanner) {
+                    html5QrcodeScanner.clear();
+                    html5QrcodeScanner = null;
+                }
+                // 強制讓輸入框保持對焦
+                document.getElementById('ir-input').focus();
+            }
+        }
 
-        // 掃描成功邏輯
-        function onScanSuccess(decodedText, decodedResult) {
+        // 確保紅外線模式下，點擊畫面任何地方都會將焦點拉回輸入框
+        document.body.addEventListener('click', () => {
+            if (currentMode === 'ir') document.getElementById('ir-input').focus();
+        });
+
+        // --- 紅外線 PDA 按下 Enter 的攔截邏輯 ---
+        function handleIrInput(event) {
+            if (event.key === 'Enter') {
+                const inputValue = event.target.value;
+                if (inputValue.trim() !== '') {
+                    processScanResult(inputValue);
+                    event.target.value = ''; // 處理完清空輸入框，準備下一次掃描
+                }
+            }
+        }
+
+        // --- 核心比對邏輯 (相機與紅外線共用) ---
+        function processScanResult(decodedText) {
             const dataParts = decodedText.trim().split(/\s+/); 
             const resultDiv = document.getElementById('result-container');
 
             if (!storedQR1) {
-                // ---------- 處理 QR1 ----------
+                // 處理 QR1
                 if (dataParts.length >= 2) {
-                    storedQR1 = {
-                        workOrder: dataParts[0],
-                        lotNo: dataParts[1]
-                    };
-                    
-                    // 將資料轉換為 JSON 格式並寫入 LocalStorage
+                    storedQR1 = { workOrder: dataParts[0], lotNo: dataParts[1] };
                     localStorage.setItem('savedQR1_data', JSON.stringify(storedQR1));
-                    
                     updateUI();
-                    resultDiv.innerText = "QR1 讀取並記錄成功！\n請開始掃描成品 QR2";
-                    pauseScanner();
+                    resultDiv.innerText = "QR1 記錄成功！\n請掃描成品 QR2";
                 } else {
-                    alert("QR1 解析失敗：欄位數量不足。");
+                    alert("QR1 格式錯誤");
                 }
             } else {
-                // ---------- 處理 QR2 ----------
+                // 處理 QR2
                 if (dataParts.length >= 5) {
                     const qr2LotNo = dataParts[1];
                     const qr2WorkOrder = dataParts[3];
 
                     if (storedQR1.workOrder === qr2WorkOrder && storedQR1.lotNo === qr2LotNo) {
-                        resultDiv.innerText = `比對結果：OK\n實際工單：${qr2WorkOrder} | Lot：${qr2LotNo}`;
+                        resultDiv.innerText = `OK\n工單：${qr2WorkOrder}\nLot：${qr2LotNo}`;
                         resultDiv.className = "ok-bg";
-                        alert("OK");
                     } else {
-                        resultDiv.innerText = `比對結果：NG\n預期工單：${storedQR1.workOrder} | 實際工單：${qr2WorkOrder}\n預期 Lot：${storedQR1.lotNo} | 實際 Lot：${qr2LotNo}`;
+                        resultDiv.innerText = `NG\n預期工單: ${storedQR1.workOrder}\n實際工單: ${qr2WorkOrder}`;
                         resultDiv.className = "ng-bg";
-                        alert("NG");
                     }
-                    pauseScanner();
                 } else {
-                    alert("QR2 解析失敗：資料欄位不足 5 個。");
+                    alert("QR2 格式錯誤");
                 }
+            }
+            
+            // 相機模式下暫停掃描避免重複觸發
+            if(currentMode === 'camera' && html5QrcodeScanner) {
+                html5QrcodeScanner.pause(true);
+                setTimeout(() => html5QrcodeScanner.resume(), 1500); 
             }
         }
 
-        // 重新設定 (清除記憶)
+        function onScanFailure(error) { /* 忽略持續掃描中的報錯 */ }
+
         function resetQR1() {
-            const confirmReset = confirm("確定要產生新事件嗎？這將會清除目前暫存的 QR1 紀錄。");
-            if (confirmReset) {
+            if (confirm("清除目前 QR1 紀錄？")) {
                 storedQR1 = null;
-                // 明確從 LocalStorage 中刪除該筆記憶
                 localStorage.removeItem('savedQR1_data');
                 updateUI();
             }
+            if (currentMode === 'ir') document.getElementById('ir-input').focus();
         }
 
-        function pauseScanner() {
-            html5QrcodeScanner.pause(true);
-            setTimeout(() => {
-                html5QrcodeScanner.resume();
-            }, 1500); 
-        }
-
-        function onScanFailure(error) {
-            // 忽略掃描中的錯誤訊息
-        }
-
-        html5QrcodeScanner.render(onScanSuccess, onScanFailure);
+        // 啟動初始化
+        updateUI();
+        setMode('ir'); // 預設載入紅外線模式
     </script>
 </body>
 </html>
