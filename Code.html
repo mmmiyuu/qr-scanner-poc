@@ -6,24 +6,29 @@
     <title>成品出貨掃瞄 (雙模式)</title>
     <script src="https://unpkg.com/html5-qrcode"></script>
     <style>
-        /* 核心佈局：限制高度為 100vh，禁止全域滾動 */
-        body { 
-            font-family: sans-serif; text-align: center; margin: 0; padding: 5px; 
-            height: 100vh; display: flex; flex-direction: column; overflow: hidden; background-color: #f4f6f9;
+        /* 修正點 1: 修正行動端高度計算，確保 100% 相容性 */
+        html { 
+            height: 100%; 
         }
         
-        h3 { margin: 5px 0; font-size: 18px; color: #333; }
+        body { 
+            font-family: sans-serif; text-align: center; margin: 0; padding: 8px; /* 微調 padding */
+            height: 100%; display: flex; flex-direction: column; overflow: hidden; background-color: #f4f6f9;
+            box-sizing: border-box; /* 確保 padding 不會增加整體高度 */
+        }
+        
+        h3 { margin: 0 0 10px 0; font-size: 18px; color: #333; flex: 0 0 auto; }
 
         /* 模式切換按鈕區塊 */
-        .mode-switch { display: flex; justify-content: center; gap: 10px; margin-bottom: 5px; }
+        .mode-switch { display: flex; justify-content: center; gap: 10px; margin-bottom: 10px; flex: 0 0 auto; }
         .mode-btn { 
             flex: 1; padding: 8px; font-size: 16px; border: 2px solid #007bff; background: white; 
             color: #007bff; border-radius: 5px; font-weight: bold; cursor: pointer;
         }
         .mode-btn.active { background: #007bff; color: white; }
 
-        /* 掃描區域 (相機與紅外線共用區塊) */
-        .scanner-container { flex: 0 0 auto; height: 180px; display: flex; justify-content: center; align-items: center; margin-bottom: 5px;}
+        /* 修正點 2: 移除 180px 死板高度，改為自適應 */
+        .scanner-container { flex: 0 0 auto; display: flex; justify-content: center; align-items: center; margin-bottom: 10px; }
         
         /* 相機框大幅縮小 */
         #reader { width: 100%; max-width: 220px; border-radius: 8px; overflow: hidden; display: none; }
@@ -31,19 +36,20 @@
         /* 紅外線輸入框設計 */
         #ir-container { display: none; width: 100%; flex-direction: column; align-items: center; }
         #ir-input { 
-            width: 80%; padding: 15px; font-size: 16px; text-align: center;
+            width: 80%; padding: 12px; font-size: 16px; text-align: center;
             border: 2px solid #28a745; border-radius: 5px; background-color: #e9ecef;
         }
         .ir-hint { font-size: 12px; color: #666; margin-top: 5px; }
 
-        /* 狀態與結果顯示區 (佔滿剩餘空間) */
-        .info-panel { flex: 1; display: flex; flex-direction: column; justify-content: center; gap: 5px; }
+        /* 狀態與結果顯示區 */
+        .info-panel { flex: 1; display: flex; flex-direction: column; justify-content: center; gap: 10px; min-height: 0; /* 防止內部元素撐破外框 */ }
         
-        #stored-qr1 { font-size: 15px; color: #0056b3; font-weight: bold; background: #e2eef9; padding: 8px; border-radius: 5px; }
+        #stored-qr1 { font-size: 15px; color: #0056b3; font-weight: bold; background: #e2eef9; padding: 8px; border-radius: 5px; flex: 0 0 auto; }
         
         #result-container { 
             flex: 1; display: flex; align-items: center; justify-content: center; padding: 10px; 
             font-size: 18px; font-weight: bold; border: 2px solid #ccc; border-radius: 8px; white-space: pre-wrap;
+            overflow-y: auto; /* 若文字過多可內部滾動，不影響外部結構 */
         }
         
         .ok-bg { background-color: #d4edda; color: #155724; border-color: #c3e6cb !important; }
@@ -53,7 +59,7 @@
         /* 產生新事件按鈕 */
         .reset-btn { 
             width: 100%; padding: 12px; font-size: 18px; font-weight: bold; cursor: pointer; 
-            background-color: #dc3545; color: white; border: none; border-radius: 5px; flex: 0 0 auto; margin-bottom: 5px;
+            background-color: #dc3545; color: white; border: none; border-radius: 5px; flex: 0 0 auto; margin-top: 5px; margin-bottom: 5px;
         }
     </style>
 </head>
