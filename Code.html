@@ -6,20 +6,16 @@
     <title>成品出貨掃瞄 (雙模式)</title>
     <script src="https://unpkg.com/html5-qrcode"></script>
     <style>
-        /* 修正點 1: 修正行動端高度計算，確保 100% 相容性 */
-        html { 
-            height: 100%; 
-        }
+        html { height: 100%; }
         
         body { 
-            font-family: sans-serif; text-align: center; margin: 0; padding: 8px; /* 微調 padding */
+            font-family: sans-serif; text-align: center; margin: 0; padding: 8px; 
             height: 100%; display: flex; flex-direction: column; overflow: hidden; background-color: #f4f6f9;
-            box-sizing: border-box; /* 確保 padding 不會增加整體高度 */
+            box-sizing: border-box; 
         }
         
         h3 { margin: 0 0 10px 0; font-size: 18px; color: #333; flex: 0 0 auto; }
 
-        /* 模式切換按鈕區塊 */
         .mode-switch { display: flex; justify-content: center; gap: 10px; margin-bottom: 10px; flex: 0 0 auto; }
         .mode-btn { 
             flex: 1; padding: 8px; font-size: 16px; border: 2px solid #007bff; background: white; 
@@ -27,36 +23,32 @@
         }
         .mode-btn.active { background: #007bff; color: white; }
 
-        /* 修正點 2: 移除 180px 死板高度，改為自適應 */
         .scanner-container { flex: 0 0 auto; display: flex; justify-content: center; align-items: center; margin-bottom: 10px; }
         
-        /* 相機框大幅縮小 */
         #reader { width: 100%; max-width: 220px; border-radius: 8px; overflow: hidden; display: none; }
         
-        /* 紅外線輸入框設計 */
+        /* 調整紅外線提示區塊的視覺，不再像一個輸入框 */
         #ir-container { display: none; width: 100%; flex-direction: column; align-items: center; }
-        #ir-input { 
-            width: 80%; padding: 12px; font-size: 16px; text-align: center;
-            border: 2px solid #28a745; border-radius: 5px; background-color: #e9ecef;
+        .ir-status-box {
+            width: 80%; padding: 15px; font-size: 16px; text-align: center; font-weight: bold;
+            border: 2px dashed #28a745; border-radius: 5px; background-color: #e8f5e9; color: #2e7d32;
         }
         .ir-hint { font-size: 12px; color: #666; margin-top: 5px; }
 
-        /* 狀態與結果顯示區 */
-        .info-panel { flex: 1; display: flex; flex-direction: column; justify-content: center; gap: 10px; min-height: 0; /* 防止內部元素撐破外框 */ }
+        .info-panel { flex: 1; display: flex; flex-direction: column; justify-content: center; gap: 10px; min-height: 0; }
         
         #stored-qr1 { font-size: 15px; color: #0056b3; font-weight: bold; background: #e2eef9; padding: 8px; border-radius: 5px; flex: 0 0 auto; }
         
         #result-container { 
             flex: 1; display: flex; align-items: center; justify-content: center; padding: 10px; 
             font-size: 18px; font-weight: bold; border: 2px solid #ccc; border-radius: 8px; white-space: pre-wrap;
-            overflow-y: auto; /* 若文字過多可內部滾動，不影響外部結構 */
+            overflow-y: auto; 
         }
         
         .ok-bg { background-color: #d4edda; color: #155724; border-color: #c3e6cb !important; }
         .ng-bg { background-color: #f8d7da; color: #721c24; border-color: #f5c6cb !important; }
         .info-bg { background-color: #e2e3e5; color: #383d41; border-color: #d6d8db !important; }
         
-        /* 產生新事件按鈕 */
         .reset-btn { 
             width: 100%; padding: 12px; font-size: 18px; font-weight: bold; cursor: pointer; 
             background-color: #dc3545; color: white; border: none; border-radius: 5px; flex: 0 0 auto; margin-top: 5px; margin-bottom: 5px;
@@ -74,8 +66,8 @@
     <div class="scanner-container">
         <div id="reader"></div>
         <div id="ir-container">
-            <input type="text" id="ir-input" placeholder="請按下 PDA 掃描鍵..." onkeypress="handleIrInput(event)" autocomplete="off">
-            <div class="ir-hint">系統會自動攔截 PDA 掃描輸入</div>
+            <div class="ir-status-box">全域掃描已啟動<br>無須點擊，請直接按下實體掃描鍵</div>
+            <div class="ir-hint">系統於背景自動擷取 PDA 鍵盤訊號</div>
         </div>
     </div>
 
@@ -88,10 +80,30 @@
 
     <script>
         let storedQR1 = JSON.parse(localStorage.getItem('savedQR1_data'));
-        let currentMode = 'ir'; // 預設使用紅外線模式
+        let currentMode = 'ir'; 
         let html5QrcodeScanner = null;
+        
+        // 全域掃描字元緩衝區
+        let scanBuffer = "";
 
-        // --- 介面初始化與模式切換邏輯 ---
+        // --- 全域按鍵攔截邏輯 (取代舊版的 input 監聽) ---
+        document.addEventListener('keydown', function(event) {
+            // 如果不是紅外線模式，不處理全域攔截
+            if (currentMode !== 'ir') return;
+
+            // 如果按下的是 Enter，代表掃描槍傳輸結束
+            if (event.key === 'Enter') {
+                if (scanBuffer.trim() !== '') {
+                    processScanResult(scanBuffer);
+                    scanBuffer = ""; // 處理完畢後清空緩衝區，準備下一次掃描
+                }
+            } 
+            // 收集一般可見字元 (排除 Shift, Ctrl 等修飾鍵)
+            else if (event.key.length === 1) {
+                scanBuffer += event.key;
+            }
+        });
+
         function updateUI() {
             const resultDiv = document.getElementById('result-container');
             if (storedQR1) {
@@ -110,10 +122,12 @@
             document.getElementById('btn-camera').classList.toggle('active', mode === 'camera');
             document.getElementById('btn-ir').classList.toggle('active', mode === 'ir');
             
+            // 切換模式時清空可能殘留的緩衝區
+            scanBuffer = "";
+
             if (mode === 'camera') {
                 document.getElementById('ir-container').style.display = 'none';
                 document.getElementById('reader').style.display = 'block';
-                // 啟動相機 (框體縮小：qrbox 設為 150)
                 if(!html5QrcodeScanner) {
                     html5QrcodeScanner = new Html5QrcodeScanner("reader", { fps: 10, qrbox: { width: 150, height: 150 } }, false);
                     html5QrcodeScanner.render(processScanResult, onScanFailure);
@@ -121,39 +135,18 @@
             } else {
                 document.getElementById('reader').style.display = 'none';
                 document.getElementById('ir-container').style.display = 'flex';
-                // 關閉相機節省資源
                 if(html5QrcodeScanner) {
                     html5QrcodeScanner.clear();
                     html5QrcodeScanner = null;
                 }
-                // 強制讓輸入框保持對焦
-                document.getElementById('ir-input').focus();
             }
         }
 
-        // 確保紅外線模式下，點擊畫面任何地方都會將焦點拉回輸入框
-        document.body.addEventListener('click', () => {
-            if (currentMode === 'ir') document.getElementById('ir-input').focus();
-        });
-
-        // --- 紅外線 PDA 按下 Enter 的攔截邏輯 ---
-        function handleIrInput(event) {
-            if (event.key === 'Enter') {
-                const inputValue = event.target.value;
-                if (inputValue.trim() !== '') {
-                    processScanResult(inputValue);
-                    event.target.value = ''; // 處理完清空輸入框，準備下一次掃描
-                }
-            }
-        }
-
-        // --- 核心比對邏輯 (相機與紅外線共用) ---
         function processScanResult(decodedText) {
             const dataParts = decodedText.trim().split(/\s+/); 
             const resultDiv = document.getElementById('result-container');
 
             if (!storedQR1) {
-                // 處理 QR1
                 if (dataParts.length >= 2) {
                     storedQR1 = { workOrder: dataParts[0], lotNo: dataParts[1] };
                     localStorage.setItem('savedQR1_data', JSON.stringify(storedQR1));
@@ -163,7 +156,6 @@
                     alert("QR1 格式錯誤");
                 }
             } else {
-                // 處理 QR2
                 if (dataParts.length >= 5) {
                     const qr2LotNo = dataParts[1];
                     const qr2WorkOrder = dataParts[3];
@@ -180,7 +172,6 @@
                 }
             }
             
-            // 相機模式下暫停掃描避免重複觸發
             if(currentMode === 'camera' && html5QrcodeScanner) {
                 html5QrcodeScanner.pause(true);
                 setTimeout(() => html5QrcodeScanner.resume(), 1500); 
@@ -194,13 +185,12 @@
                 storedQR1 = null;
                 localStorage.removeItem('savedQR1_data');
                 updateUI();
+                scanBuffer = ""; // 重置時同時清空緩衝區
             }
-            if (currentMode === 'ir') document.getElementById('ir-input').focus();
         }
 
-        // 啟動初始化
         updateUI();
-        setMode('ir'); // 預設載入紅外線模式
+        setMode('ir'); 
     </script>
 </body>
 </html>
