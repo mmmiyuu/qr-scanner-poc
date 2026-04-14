@@ -44,6 +44,7 @@
             border: none;
             font-size: 16px; 
             pointer-events: none;
+            z-index: -1;
         }
 
         .info-panel { flex: 1; display: flex; flex-direction: column; justify-content: center; gap: 10px; min-height: 0; }
@@ -93,7 +94,7 @@
         <div id="ir-container">
             <div class="ir-status-box">全域掃描已啟動<br>無須點擊，請直接連續掃描</div>
             <div class="ir-hint">系統於背景自動擷取 PDA 訊號</div>
-            <input type="text" id="hidden-ir-input" onkeydown="handleHiddenInput(event)" autocomplete="off">
+            <input type="text" id="hidden-ir-input" inputmode="none" onkeydown="handleHiddenInput(event)" autocomplete="off">
         </div>
     </div>
 
