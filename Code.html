@@ -27,13 +27,22 @@
         
         #reader { width: 100%; max-width: 220px; border-radius: 8px; overflow: hidden; display: none; }
         
-        /* 調整紅外線提示區塊的視覺，不再像一個輸入框 */
-        #ir-container { display: none; width: 100%; flex-direction: column; align-items: center; }
+        #ir-container { display: none; width: 100%; flex-direction: column; align-items: center; position: relative; }
+        
         .ir-status-box {
             width: 80%; padding: 15px; font-size: 16px; text-align: center; font-weight: bold;
             border: 2px dashed #28a745; border-radius: 5px; background-color: #e8f5e9; color: #2e7d32;
         }
         .ir-hint { font-size: 12px; color: #666; margin-top: 5px; }
+
+        /* 隱藏輸入框：實體存在以接收焦點，但移出可視範圍 */
+        #hidden-ir-input {
+            position: absolute;
+            left: -9999px;
+            opacity: 0;
+            width: 1px;
+            height: 1px;
+        }
 
         .info-panel { flex: 1; display: flex; flex-direction: column; justify-content: center; gap: 10px; min-height: 0; }
         
@@ -67,7 +76,8 @@
         <div id="reader"></div>
         <div id="ir-container">
             <div class="ir-status-box">全域掃描已啟動<br>無須點擊，請直接按下實體掃描鍵</div>
-            <div class="ir-hint">系統於背景自動擷取 PDA 鍵盤訊號</div>
+            <div class="ir-hint">系統於背景自動擷取 PDA 訊號</div>
+            <input type="text" id="hidden-ir-input" onkeypress="handleHiddenInput(event)" autocomplete="off">
         </div>
     </div>
 
@@ -82,25 +92,34 @@
         let storedQR1 = JSON.parse(localStorage.getItem('savedQR1_data'));
         let currentMode = 'ir'; 
         let html5QrcodeScanner = null;
-        
-        // 全域掃描字元緩衝區
-        let scanBuffer = "";
+        const hiddenInput = document.getElementById('hidden-ir-input');
 
-        // --- 全域按鍵攔截邏輯 (取代舊版的 input 監聽) ---
-        document.addEventListener('keydown', function(event) {
-            // 如果不是紅外線模式，不處理全域攔截
-            if (currentMode !== 'ir') return;
-
-            // 如果按下的是 Enter，代表掃描槍傳輸結束
+        // --- 隱藏輸入框事件攔截 ---
+        function handleHiddenInput(event) {
             if (event.key === 'Enter') {
-                if (scanBuffer.trim() !== '') {
-                    processScanResult(scanBuffer);
-                    scanBuffer = ""; // 處理完畢後清空緩衝區，準備下一次掃描
+                const inputValue = event.target.value;
+                if (inputValue.trim() !== '') {
+                    processScanResult(inputValue);
+                    event.target.value = ''; // 處理完清空輸入框
                 }
-            } 
-            // 收集一般可見字元 (排除 Shift, Ctrl 等修飾鍵)
-            else if (event.key.length === 1) {
-                scanBuffer += event.key;
+            }
+        }
+
+        // --- 防失焦機制：確保焦點始終在隱藏輸入框上 ---
+        function enforceFocus() {
+            if (currentMode === 'ir') {
+                hiddenInput.focus();
+            }
+        }
+
+        // 點擊畫面任何地方，重新對焦
+        document.body.addEventListener('click', enforceFocus);
+        document.body.addEventListener('touchstart', enforceFocus);
+        
+        // 若輸入框意外失去焦點，立刻拉回
+        hiddenInput.addEventListener('blur', () => {
+            if (currentMode === 'ir') {
+                setTimeout(() => hiddenInput.focus(), 10);
             }
         });
 
@@ -122,12 +141,10 @@
             document.getElementById('btn-camera').classList.toggle('active', mode === 'camera');
             document.getElementById('btn-ir').classList.toggle('active', mode === 'ir');
             
-            // 切換模式時清空可能殘留的緩衝區
-            scanBuffer = "";
-
             if (mode === 'camera') {
                 document.getElementById('ir-container').style.display = 'none';
                 document.getElementById('reader').style.display = 'block';
+                hiddenInput.blur(); // 釋放焦點
                 if(!html5QrcodeScanner) {
                     html5QrcodeScanner = new Html5QrcodeScanner("reader", { fps: 10, qrbox: { width: 150, height: 150 } }, false);
                     html5QrcodeScanner.render(processScanResult, onScanFailure);
@@ -135,6 +152,8 @@
             } else {
                 document.getElementById('reader').style.display = 'none';
                 document.getElementById('ir-container').style.display = 'flex';
+                hiddenInput.value = ''; // 切換模式時清空殘留值
+                enforceFocus(); // 強制對焦
                 if(html5QrcodeScanner) {
                     html5QrcodeScanner.clear();
                     html5QrcodeScanner = null;
@@ -185,12 +204,15 @@
                 storedQR1 = null;
                 localStorage.removeItem('savedQR1_data');
                 updateUI();
-                scanBuffer = ""; // 重置時同時清空緩衝區
             }
+            enforceFocus(); // 重置後確保焦點還在
         }
 
         updateUI();
         setMode('ir'); 
+        
+        // 頁面載入完成後強制抓取焦點
+        window.onload = enforceFocus;
     </script>
 </body>
 </html>
