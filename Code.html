@@ -35,13 +35,15 @@
         }
         .ir-hint { font-size: 12px; color: #666; margin-top: 5px; }
 
-        /* 隱藏輸入框：實體存在以接收焦點，但移出可視範圍 */
+        /* 修正隱藏輸入框的 CSS，避免觸發瀏覽器畫面捲動，並設定字體大小避免 iOS 強制放大 */
         #hidden-ir-input {
             position: absolute;
-            left: -9999px;
+            top: 0; left: 0;
             opacity: 0;
-            width: 1px;
-            height: 1px;
+            width: 1px; height: 1px;
+            border: none;
+            font-size: 16px; 
+            pointer-events: none;
         }
 
         .info-panel { flex: 1; display: flex; flex-direction: column; justify-content: center; gap: 10px; min-height: 0; }
@@ -75,9 +77,9 @@
     <div class="scanner-container">
         <div id="reader"></div>
         <div id="ir-container">
-            <div class="ir-status-box">全域掃描已啟動<br>無須點擊，請直接按下實體掃描鍵</div>
+            <div class="ir-status-box">全域掃描已啟動<br>無須點擊，請直接連續掃描</div>
             <div class="ir-hint">系統於背景自動擷取 PDA 訊號</div>
-            <input type="text" id="hidden-ir-input" onkeypress="handleHiddenInput(event)" autocomplete="off">
+            <input type="text" id="hidden-ir-input" onkeydown="handleHiddenInput(event)" autocomplete="off">
         </div>
     </div>
 
@@ -94,29 +96,30 @@
         let html5QrcodeScanner = null;
         const hiddenInput = document.getElementById('hidden-ir-input');
 
-        // --- 隱藏輸入框事件攔截 ---
+        // --- 隱藏輸入框事件攔截 (加入 preventDefault) ---
         function handleHiddenInput(event) {
             if (event.key === 'Enter') {
+                event.preventDefault(); // 阻斷 Enter 鍵的預設轉移焦點行為
                 const inputValue = event.target.value;
                 if (inputValue.trim() !== '') {
                     processScanResult(inputValue);
                     event.target.value = ''; // 處理完清空輸入框
                 }
+                // 掃描完成後，強制確保焦點依然在輸入框上
+                setTimeout(enforceFocus, 10); 
             }
         }
 
-        // --- 防失焦機制：確保焦點始終在隱藏輸入框上 ---
+        // --- 防失焦機制 ---
         function enforceFocus() {
             if (currentMode === 'ir') {
                 hiddenInput.focus();
             }
         }
 
-        // 點擊畫面任何地方，重新對焦
         document.body.addEventListener('click', enforceFocus);
         document.body.addEventListener('touchstart', enforceFocus);
         
-        // 若輸入框意外失去焦點，立刻拉回
         hiddenInput.addEventListener('blur', () => {
             if (currentMode === 'ir') {
                 setTimeout(() => hiddenInput.focus(), 10);
@@ -127,8 +130,9 @@
             const resultDiv = document.getElementById('result-container');
             if (storedQR1) {
                 document.getElementById('stored-qr1').innerText = `【記憶已載入】\n工單: ${storedQR1.workOrder} | Lot: ${storedQR1.lotNo}`;
-                resultDiv.innerText = "已就緒，請掃描成品 QR2";
-                resultDiv.className = "info-bg";
+                if (resultDiv.className === "info-bg") {
+                    resultDiv.innerText = "已就緒，請直接掃描成品 QR2";
+                }
             } else {
                 document.getElementById('stored-qr1').innerText = "【等待掃描包裝明細 QR1】";
                 resultDiv.innerText = "請掃描 QR1";
@@ -141,10 +145,12 @@
             document.getElementById('btn-camera').classList.toggle('active', mode === 'camera');
             document.getElementById('btn-ir').classList.toggle('active', mode === 'ir');
             
+            const resultDiv = document.getElementById('result-container');
+
             if (mode === 'camera') {
                 document.getElementById('ir-container').style.display = 'none';
                 document.getElementById('reader').style.display = 'block';
-                hiddenInput.blur(); // 釋放焦點
+                hiddenInput.blur(); 
                 if(!html5QrcodeScanner) {
                     html5QrcodeScanner = new Html5QrcodeScanner("reader", { fps: 10, qrbox: { width: 150, height: 150 } }, false);
                     html5QrcodeScanner.render(processScanResult, onScanFailure);
@@ -152,8 +158,8 @@
             } else {
                 document.getElementById('reader').style.display = 'none';
                 document.getElementById('ir-container').style.display = 'flex';
-                hiddenInput.value = ''; // 切換模式時清空殘留值
-                enforceFocus(); // 強制對焦
+                hiddenInput.value = ''; 
+                enforceFocus(); 
                 if(html5QrcodeScanner) {
                     html5QrcodeScanner.clear();
                     html5QrcodeScanner = null;
@@ -166,15 +172,20 @@
             const resultDiv = document.getElementById('result-container');
 
             if (!storedQR1) {
+                // 處理 QR1
                 if (dataParts.length >= 2) {
                     storedQR1 = { workOrder: dataParts[0], lotNo: dataParts[1] };
                     localStorage.setItem('savedQR1_data', JSON.stringify(storedQR1));
+                    resultDiv.innerText = "QR1 記錄成功！\n請接續掃描成品 QR2";
+                    resultDiv.className = "info-bg";
                     updateUI();
-                    resultDiv.innerText = "QR1 記錄成功！\n請掃描成品 QR2";
                 } else {
-                    alert("QR1 格式錯誤");
+                    // 移除 alert，改為畫面提示
+                    resultDiv.innerText = "NG：QR1 格式錯誤\n請重新掃描";
+                    resultDiv.className = "ng-bg";
                 }
             } else {
+                // 處理 QR2
                 if (dataParts.length >= 5) {
                     const qr2LotNo = dataParts[1];
                     const qr2WorkOrder = dataParts[3];
@@ -187,7 +198,9 @@
                         resultDiv.className = "ng-bg";
                     }
                 } else {
-                    alert("QR2 格式錯誤");
+                    // 移除 alert，改為畫面提示
+                    resultDiv.innerText = "NG：QR2 格式錯誤\n請重新掃描";
+                    resultDiv.className = "ng-bg";
                 }
             }
             
@@ -205,13 +218,12 @@
                 localStorage.removeItem('savedQR1_data');
                 updateUI();
             }
-            enforceFocus(); // 重置後確保焦點還在
+            enforceFocus(); 
         }
 
         updateUI();
         setMode('ir'); 
         
-        // 頁面載入完成後強制抓取焦點
         window.onload = enforceFocus;
     </script>
 </body>
