@@ -35,7 +35,6 @@
         }
         .ir-hint { font-size: 12px; color: #666; margin-top: 5px; }
 
-        /* 修正隱藏輸入框的 CSS，避免觸發瀏覽器畫面捲動，並設定字體大小避免 iOS 強制放大 */
         #hidden-ir-input {
             position: absolute;
             top: 0; left: 0;
@@ -88,29 +87,27 @@
         <div id="result-container" class="info-bg">請選擇模式並掃描 QR Code</div>
     </div>
 
-    <button class="reset-btn" onclick="resetQR1()">產生新事件 (換箱/新工單)</button>
+    <button id="reset-btn-element" class="reset-btn" onclick="resetQR1()">產生新事件 (換箱/新工單)</button>
 
     <script>
         let storedQR1 = JSON.parse(localStorage.getItem('savedQR1_data'));
         let currentMode = 'ir'; 
         let html5QrcodeScanner = null;
         const hiddenInput = document.getElementById('hidden-ir-input');
+        const resetButton = document.getElementById('reset-btn-element');
 
-        // --- 隱藏輸入框事件攔截 (加入 preventDefault) ---
         function handleHiddenInput(event) {
             if (event.key === 'Enter') {
-                event.preventDefault(); // 阻斷 Enter 鍵的預設轉移焦點行為
+                event.preventDefault(); 
                 const inputValue = event.target.value;
                 if (inputValue.trim() !== '') {
                     processScanResult(inputValue);
-                    event.target.value = ''; // 處理完清空輸入框
+                    event.target.value = ''; 
                 }
-                // 掃描完成後，強制確保焦點依然在輸入框上
                 setTimeout(enforceFocus, 10); 
             }
         }
 
-        // --- 防失焦機制 ---
         function enforceFocus() {
             if (currentMode === 'ir') {
                 hiddenInput.focus();
@@ -172,7 +169,6 @@
             const resultDiv = document.getElementById('result-container');
 
             if (!storedQR1) {
-                // 處理 QR1
                 if (dataParts.length >= 2) {
                     storedQR1 = { workOrder: dataParts[0], lotNo: dataParts[1] };
                     localStorage.setItem('savedQR1_data', JSON.stringify(storedQR1));
@@ -180,12 +176,10 @@
                     resultDiv.className = "info-bg";
                     updateUI();
                 } else {
-                    // 移除 alert，改為畫面提示
                     resultDiv.innerText = "NG：QR1 格式錯誤\n請重新掃描";
                     resultDiv.className = "ng-bg";
                 }
             } else {
-                // 處理 QR2
                 if (dataParts.length >= 5) {
                     const qr2LotNo = dataParts[1];
                     const qr2WorkOrder = dataParts[3];
@@ -198,7 +192,6 @@
                         resultDiv.className = "ng-bg";
                     }
                 } else {
-                    // 移除 alert，改為畫面提示
                     resultDiv.innerText = "NG：QR2 格式錯誤\n請重新掃描";
                     resultDiv.className = "ng-bg";
                 }
@@ -210,7 +203,7 @@
             }
         }
 
-        function onScanFailure(error) { /* 忽略持續掃描中的報錯 */ }
+        function onScanFailure(error) { }
 
         function resetQR1() {
             if (confirm("清除目前 QR1 紀錄？")) {
@@ -218,7 +211,12 @@
                 localStorage.removeItem('savedQR1_data');
                 updateUI();
             }
-            enforceFocus(); 
+            
+            // 關鍵修正：推遲焦點捕獲，避開瀏覽器渲染阻塞期
+            setTimeout(() => {
+                resetButton.blur(); // 強制移除按鈕本身的焦點
+                enforceFocus();     // 將焦點重新鎖定到隱藏輸入框
+            }, 100); // 100 毫秒的緩衝時間足以應付多數 PDA 設備的延遲
         }
 
         updateUI();
