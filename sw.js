@@ -1,7 +1,7 @@
 const CACHE_NAME = 'scanner-pwa-cache-v1';
 const urlsToCache = [
   './',               // 快取根目錄
-  './Code.html',     // 快取主程式
+  './index.html',     // 快取主程式
   './manifest.json',  // 快取設定檔
   // 【關鍵】強制快取外部的相機掃描套件，確保斷網也能載入
   'https://unpkg.com/html5-qrcode' 
