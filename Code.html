@@ -5,7 +5,20 @@
     <meta name="viewport" content="width=device-width, initial-scale=1.0, maximum-scale=1.0, user-scalable=no">
     <title>成品出貨掃瞄 (雙模式)</title>
     <script src="https://unpkg.com/html5-qrcode"></script>
+    <link rel="manifest" href="./manifest.json">
     <style>
+        // --- 註冊 Service Worker (PWA 離線核心) ---
+    if ('serviceWorker' in navigator) {
+        window.addEventListener('load', () => {
+            navigator.serviceWorker.register('./sw.js')
+                .then(registration => {
+                    console.log('ServiceWorker 註冊成功，範圍: ', registration.scope);
+                })
+                .catch(err => {
+                    console.log('ServiceWorker 註冊失敗: ', err);
+                });
+        });
+    }
         html { height: 100%; }
         
         body { 
